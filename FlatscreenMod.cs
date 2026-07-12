@@ -2,7 +2,7 @@ using MelonLoader;
 using HarmonyLib;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(FlatscreenATTMod.FlatscreenMod), "Flatscreen ATT Mod", "1.4.0", "Keyon + Codex")]
+[assembly: MelonInfo(typeof(FlatscreenATTMod.FlatscreenMod), "Flatscreen ATT Mod", "1.4.0", "Foxydemon88")]
 [assembly: MelonGame(null, "A Township Tale")]
 
 namespace FlatscreenATTMod
