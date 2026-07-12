@@ -45,21 +45,3 @@ FlatscreenATTMod\bin\Release\FlatscreenATTMod.dll
 ```
 
 Place that DLL into the game's `Mods` folder.
-
-## Public Repo Notes
-
-Safe to publish:
-
-- `FlatscreenATTMod/Source/*.cs`
-- `FlatscreenATTMod/FlatscreenATTMod.csproj`
-- `build.ps1`
-- `README.md`
-- `.gitignore`
-
-Usually do not publish:
-
-- `TavernLib-main.zip`
-- `TavernLib-main/Dependencies/*.dll`
-- `FlatscreenATTMod/bin/`
-- `FlatscreenATTMod/obj/`
-- `.vs/`
