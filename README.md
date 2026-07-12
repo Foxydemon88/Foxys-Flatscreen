@@ -28,7 +28,8 @@ It adds desktop camera, keyboard movement, mouse look, hand emulation, menu inte
 - `2`: lock/unlock right hand in place
 - `3`: lock/unlock both hands
 - `4`: unlock both hands
-- `Home`: reset hands
+- `V`: Third-Person
+- `I`: Bag Open Pose
 
 ## Build
 
