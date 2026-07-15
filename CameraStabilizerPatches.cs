@@ -16,7 +16,7 @@ namespace FlatscreenATTMod
                 yield break;
             }
 
-            var methodNames = new[] { "OnEnable", "Activate", "StabelizeCamera", "ToggleCamera", "OnDisable" };
+            var methodNames = new[] { "StabelizeCamera", "StabilizeCamera", "LateUpdate", "Update" };
             for (var i = 0; i < methodNames.Length; i++)
             {
                 var method = type.GetMethod(methodNames[i], BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
