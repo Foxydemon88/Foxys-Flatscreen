@@ -18,9 +18,13 @@ namespace FlatscreenATTMod
         public bool IsServerBrowserTogglePressed { get { return _inputSystem.WasPressed("f7Key"); } }
         public bool IsLeftSelectTogglePressed { get { return _inputSystem.WasPressed("qKey"); } }
         public bool IsRightSelectTogglePressed { get { return _inputSystem.WasPressed("eKey"); } }
+        public bool IsLeftGrabTogglePressed { get { return _inputSystem.WasMousePressed("leftButton"); } }
+        public bool IsRightGrabTogglePressed { get { return _inputSystem.WasMousePressed("rightButton"); } }
         public bool IsLeftGrabPressed { get { return _inputSystem.IsMousePressed("leftButton"); } }
         public bool IsRightGrabPressed { get { return _inputSystem.IsMousePressed("rightButton"); } }
         public bool IsTeleportPressed { get { return _inputSystem.IsPressed("tKey"); } }
+        public bool IsBagTogglePressed { get { return _inputSystem.WasPressed("iKey"); } }
+        public bool IsThirdPersonTogglePressed { get { return _inputSystem.WasPressed("vKey"); } }
         public bool IsRunPressed { get { return _inputSystem.IsPressed("leftShiftKey") || _inputSystem.IsPressed("rightShiftKey"); } }
         public bool IsHeightUpPressed { get { return _inputSystem.IsPressed("rKey"); } }
         public bool IsHeightDownPressed { get { return _inputSystem.IsPressed("fKey"); } }
@@ -38,6 +42,16 @@ namespace FlatscreenATTMod
         public bool IsHandAdjustRightPressed { get { return _inputSystem.IsPressed("rightArrowKey"); } }
         public bool IsHandAdjustUpPressed { get { return _inputSystem.IsPressed("upArrowKey"); } }
         public bool IsHandAdjustDownPressed { get { return _inputSystem.IsPressed("downArrowKey"); } }
+        public bool HasMoveInput
+        {
+            get
+            {
+                return _inputSystem.IsPressed("wKey") ||
+                       _inputSystem.IsPressed("aKey") ||
+                       _inputSystem.IsPressed("sKey") ||
+                       _inputSystem.IsPressed("dKey");
+            }
+        }
 
         public Quaternion CameraRotation { get { return Quaternion.Euler(_pitch, _yaw, 0f); } }
         public Vector3 ForwardOnPlane { get { return Quaternion.Euler(0f, _yaw, 0f) * Vector3.forward; } }
@@ -77,6 +91,11 @@ namespace FlatscreenATTMod
         public float ReadScroll()
         {
             return IsAvailable ? _inputSystem.ReadMouseVector2("scroll").y : 0f;
+        }
+
+        public Vector2 ReadMousePosition()
+        {
+            return IsAvailable ? _inputSystem.ReadMouseVector2("position") : new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
         }
 
         private static float NormalizePitch(float pitch)
@@ -124,6 +143,11 @@ namespace FlatscreenATTMod
             public bool IsMousePressed(string mouseProperty)
             {
                 return ReadBooleanControl(Mouse, mouseProperty, "isPressed");
+            }
+
+            public bool WasMousePressed(string mouseProperty)
+            {
+                return ReadBooleanControl(Mouse, mouseProperty, "wasPressedThisFrame");
             }
 
             public Vector2 ReadMouseVector2(string mouseProperty)
