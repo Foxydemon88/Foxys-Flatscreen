@@ -26,7 +26,7 @@ namespace FlatscreenATTMod
         public string CurrentMenuTargetName { get; private set; }
         public string CurrentParentComponents { get; private set; }
 
-        public Vector3 Update(Transform cameraTransform, float fallbackDistance)
+        public Vector3 Update(Camera camera, Transform cameraTransform, Vector2 pointerPosition, bool cursorLocked, float fallbackDistance)
         {
             var fallback = cameraTransform.position + cameraTransform.forward * fallbackDistance;
             HasTarget = false;
@@ -46,7 +46,9 @@ namespace FlatscreenATTMod
                 return fallback;
             }
 
-            var ray = new Ray(cameraTransform.position, cameraTransform.forward);
+            var ray = camera != null
+                ? camera.ScreenPointToRay(cursorLocked ? new Vector2(Screen.width * 0.5f, Screen.height * 0.5f) : pointerPosition)
+                : new Ray(cameraTransform.position, cameraTransform.forward);
             FindPickupFromRaycastAll(ray);
             var hit = Activator.CreateInstance(_raycastHitType);
             var args = new object[] { ray, hit, MaxDistance };
@@ -178,6 +180,11 @@ namespace FlatscreenATTMod
                     var pickup = FindPickup(hit);
                     if (pickup != null)
                     {
+                        if (IsHeldObject(pickup))
+                        {
+                            continue;
+                        }
+
                         CurrentPickup = pickup;
                         var component = pickup as Component;
                         if (component != null)
@@ -204,7 +211,7 @@ namespace FlatscreenATTMod
 
             foreach (var behaviour in collider.GetComponentsInParent<MonoBehaviour>(true))
             {
-                if (behaviour != null && IsTypeOrBaseNamed(behaviour.GetType(), "Pickup"))
+                if (behaviour != null && IsTypeOrBaseNamed(behaviour.GetType(), "Pickup") && !IsHeldObject(behaviour))
                 {
                     return behaviour;
                 }
@@ -240,14 +247,14 @@ namespace FlatscreenATTMod
                     CurrentParentComponents += behaviour.GetType().Name;
                 }
 
-                if (behaviour.GetType().Name == "Interactable")
+                if (behaviour.GetType().Name == "Interactable" && !IsHeldObject(behaviour))
                 {
                     CurrentInteractableName = behaviour.name;
                     CurrentInteractable = behaviour;
                     return;
                 }
 
-                if (CurrentPickup == null && IsTypeOrBaseNamed(behaviour.GetType(), "Pickup"))
+                if (CurrentPickup == null && IsTypeOrBaseNamed(behaviour.GetType(), "Pickup") && !IsHeldObject(behaviour))
                 {
                     CurrentPickup = behaviour;
                     CurrentInteractableName = behaviour.name + " / Pickup";
@@ -262,7 +269,7 @@ namespace FlatscreenATTMod
                 }
 
                 var referencedInteractable = FindReferencedInteractable(behaviour);
-                if (referencedInteractable != null)
+                if (referencedInteractable != null && !IsHeldObject(referencedInteractable))
                 {
                     var component = referencedInteractable as Component;
                     CurrentInteractableName = component == null ? referencedInteractable.GetType().Name : component.name;
@@ -325,7 +332,12 @@ namespace FlatscreenATTMod
                    name.Contains("interactable") ||
                    name == "pickup" ||
                    name == "handle" ||
-                   name == "targetpickup";
+                   name == "targetpickup" ||
+                   name.Contains("slot") ||
+                   name.Contains("bag") ||
+                   name.Contains("pouch") ||
+                   name.Contains("container") ||
+                   name.Contains("inventory");
         }
 
         private static object ResolveInteractable(object value)
@@ -357,7 +369,12 @@ namespace FlatscreenATTMod
 
         private static bool IsInteractableLikeType(Type type)
         {
-            return IsTypeOrBaseNamed(type, "Interactable");
+            return IsTypeOrBaseNamed(type, "Interactable") ||
+                   TypeNameContains(type, "slot") ||
+                   TypeNameContains(type, "bag") ||
+                   TypeNameContains(type, "pouch") ||
+                   TypeNameContains(type, "container") ||
+                   TypeNameContains(type, "inventory");
         }
 
         private static bool IsTypeOrBaseNamed(Type type, string name)
@@ -373,6 +390,152 @@ namespace FlatscreenATTMod
             }
 
             return false;
+        }
+
+        private static bool TypeNameContains(Type type, string text)
+        {
+            while (type != null)
+            {
+                var typeName = type.Name;
+                if (!string.IsNullOrEmpty(typeName) && typeName.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+
+                type = type.BaseType;
+            }
+
+            return false;
+        }
+
+        private static bool IsHeldObject(object target)
+        {
+            if (target == null)
+            {
+                return false;
+            }
+
+            var boolNames = new[] { "IsHeld", "Held", "IsGrabbed", "Grabbed", "InHand", "IsInteracting" };
+            for (var i = 0; i < boolNames.Length; i++)
+            {
+                var value = ReadBoolMember(target, boolNames[i]);
+                if (value.HasValue && value.Value)
+                {
+                    return true;
+                }
+            }
+
+            var ownerRefs = new[] { "Holder", "HeldBy", "Interactor", "CurrentInteractor", "Grabber", "Owner", "Player", "Controller" };
+            for (var i = 0; i < ownerRefs.Length; i++)
+            {
+                var owner = ReadObjectMember(target, ownerRefs[i]);
+                if (owner == null)
+                {
+                    continue;
+                }
+
+                var localFlags = new[] { "IsLocal", "IsLocalPlayer", "IsOwner", "IsOwned", "HasAuthority", "IsMine" };
+                var hasAnyLocalFlag = false;
+                for (var j = 0; j < localFlags.Length; j++)
+                {
+                    var local = ReadBoolMember(owner, localFlags[j]);
+                    if (!local.HasValue)
+                    {
+                        continue;
+                    }
+
+                    hasAnyLocalFlag = true;
+                    if (!local.Value)
+                    {
+                        return true;
+                    }
+                }
+
+                if (hasAnyLocalFlag)
+                {
+                    return false;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool? ReadBoolMember(object instance, string name)
+        {
+            if (instance == null)
+            {
+                return null;
+            }
+
+            var type = instance.GetType();
+            var property = type.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (property != null)
+            {
+                try
+                {
+                    var value = property.GetValue(instance, null);
+                    if (value is bool)
+                    {
+                        return (bool)value;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            var field = type.GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (field != null)
+            {
+                try
+                {
+                    var value = field.GetValue(instance);
+                    if (value is bool)
+                    {
+                        return (bool)value;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return null;
+        }
+
+        private static object ReadObjectMember(object instance, string name)
+        {
+            if (instance == null)
+            {
+                return null;
+            }
+
+            var type = instance.GetType();
+            var property = type.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (property != null && property.CanRead)
+            {
+                try
+                {
+                    return property.GetValue(instance, null);
+                }
+                catch
+                {
+                }
+            }
+
+            var field = type.GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (field != null)
+            {
+                try
+                {
+                    return field.GetValue(instance);
+                }
+                catch
+                {
+                }
+            }
+
+            return null;
         }
 
         private static object SafeGetField(FieldInfo field, object instance)
