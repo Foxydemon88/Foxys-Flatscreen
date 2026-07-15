@@ -11,22 +11,21 @@ namespace FlatscreenATTMod
         private const float FaceForwardOffset = 0.08f;
         private const float FacePitch = -8f;
         private const float ArrowAdjustSpeed = 0.55f;
-
+        private const float BagBackOffset = 0.28f;
+        private const float BagSideOffset = 0.18f;
+        private const float BagHeightOffset = 0.34f;
         private readonly HandState _left = new HandState(new Vector3(-0.22f, -0.60f, 0.10f), -14f, 18f);
         private readonly HandState _right = new HandState(new Vector3(0.22f, -0.60f, 0.10f), 14f, 18f);
         private readonly LookTargeter _targeter = new LookTargeter();
-        private bool _wasLeftGrabbing;
-        private bool _wasRightGrabbing;
-        private object _leftInteractor;
-        private object _rightInteractor;
-        private object _leftHeldInteractable;
-        private object _rightHeldInteractable;
         private object _lastLeftInput;
         private object _lastRightInput;
-        private bool _leftPickupClickMode;
-        private bool _rightPickupClickMode;
         private bool _leftSelectedToggle;
         private bool _rightSelectedToggle;
+        private bool _leftGrabToggle;
+        private bool _rightGrabToggle;
+        private bool _bagAssistActive;
+        private Vector3 _bagAssistPosition;
+        private Quaternion _bagAssistRotation;
 
         public string TargetColliderName { get { return _targeter.CurrentColliderName; } }
         public string TargetInteractableName { get { return _targeter.CurrentInteractableName; } }
@@ -45,14 +44,56 @@ namespace FlatscreenATTMod
         {
             _left.Reset();
             _right.Reset();
-            _leftInteractor = null;
-            _rightInteractor = null;
-            _leftHeldInteractable = null;
-            _rightHeldInteractable = null;
-            _wasLeftGrabbing = false;
-            _wasRightGrabbing = false;
-            _leftPickupClickMode = false;
-            _rightPickupClickMode = false;
+            _bagAssistActive = false;
+            _leftGrabToggle = false;
+            _rightGrabToggle = false;
+        }
+
+        public void ReleaseAllGrabs()
+        {
+            _leftGrabToggle = false;
+            _rightGrabToggle = false;
+        }
+
+        public void TriggerBagAssist(GameReflection game, Transform cameraTransform)
+        {
+            if (_bagAssistActive)
+            {
+                _bagAssistActive = false;
+                _left.ResetRestPose();
+                return;
+            }
+
+            var localPlayer = game.FindLocalPlayer();
+            var playerRoot = game.GetPlayerRootTransform(localPlayer);
+            var reference = playerRoot != null ? playerRoot : cameraTransform;
+            if (reference == null)
+            {
+                return;
+            }
+
+            var forward = Vector3.ProjectOnPlane(reference.forward, Vector3.up);
+            if (forward.sqrMagnitude < 0.0001f)
+            {
+                forward = reference.forward;
+            }
+            forward.Normalize();
+
+            var right = Vector3.Cross(Vector3.up, forward);
+            if (right.sqrMagnitude < 0.0001f)
+            {
+                right = reference.right;
+            }
+            right.Normalize();
+
+            var heightSource = cameraTransform != null ? cameraTransform : reference;
+            _bagAssistPosition = new Vector3(
+                reference.position.x - forward.x * BagBackOffset - right.x * BagSideOffset,
+                heightSource.position.y - BagHeightOffset,
+                reference.position.z - forward.z * BagBackOffset - right.z * BagSideOffset);
+            _bagAssistRotation = Quaternion.LookRotation(-forward, Vector3.up) * Quaternion.Euler(0f, -90f, 90f);
+            _bagAssistActive = true;
+            _leftSelectedToggle = false;
         }
 
         public void ResetLeftPose()
@@ -95,28 +136,24 @@ namespace FlatscreenATTMod
             _right.Depth = Mathf.Clamp(value, -0.15f, 1.6f);
         }
 
-        public void Update(object player, GameReflection game, DesktopInput input, Transform cameraTransform)
+        public void Update(object player, GameReflection game, DesktopInput input, Camera camera, Transform cameraTransform, bool cursorLocked)
         {
-            UpdateInputs(game.GetLeftInput(player), game.GetRightInput(player), game, input, cameraTransform);
+            UpdateInputs(game.GetLeftInput(player), game.GetRightInput(player), game, input, camera, cameraTransform, cursorLocked);
         }
 
-        public void UpdateInputs(object leftInput, object rightInput, GameReflection game, DesktopInput input, Transform cameraTransform)
+        public void UpdateInputs(object leftInput, object rightInput, GameReflection game, DesktopInput input, Camera camera, Transform cameraTransform, bool cursorLocked)
         {
             if (!object.ReferenceEquals(_lastLeftInput, leftInput))
             {
-                _leftInteractor = null;
-                _leftHeldInteractable = null;
-                _wasLeftGrabbing = false;
-                _leftPickupClickMode = false;
+                _left.IsLocked = false;
+                _left.ResetRestPose();
                 _lastLeftInput = leftInput;
             }
 
             if (!object.ReferenceEquals(_lastRightInput, rightInput))
             {
-                _rightInteractor = null;
-                _rightHeldInteractable = null;
-                _wasRightGrabbing = false;
-                _rightPickupClickMode = false;
+                _right.IsLocked = false;
+                _right.ResetRestPose();
                 _lastRightInput = rightInput;
             }
 
@@ -151,7 +188,11 @@ namespace FlatscreenATTMod
             if (input.IsLeftSelectTogglePressed)
             {
                 _leftSelectedToggle = !_leftSelectedToggle;
-                if (!_leftSelectedToggle)
+                if (_leftSelectedToggle)
+                {
+                    _left.IsLocked = false;
+                }
+                else
                 {
                     _left.ResetRestPose();
                 }
@@ -160,7 +201,11 @@ namespace FlatscreenATTMod
             if (input.IsRightSelectTogglePressed)
             {
                 _rightSelectedToggle = !_rightSelectedToggle;
-                if (!_rightSelectedToggle)
+                if (_rightSelectedToggle)
+                {
+                    _right.IsLocked = false;
+                }
+                else
                 {
                     _right.ResetRestPose();
                 }
@@ -214,22 +259,36 @@ namespace FlatscreenATTMod
                 }
             }
 
-            var lookPoint = _targeter.Update(cameraTransform, Mathf.Max(_left.Depth, _right.Depth));
-            HandleGrabInteraction(game, leftInput, ref _leftInteractor, ref _leftHeldInteractable, ref _leftPickupClickMode, _targeter.CurrentPickup, _targeter.CurrentInteractable, _targeter.CurrentMenuTarget, input.IsLeftGrabPressed, ref _wasLeftGrabbing, true);
-            HandleGrabInteraction(game, rightInput, ref _rightInteractor, ref _rightHeldInteractable, ref _rightPickupClickMode, _targeter.CurrentPickup, _targeter.CurrentInteractable, _targeter.CurrentMenuTarget, input.IsRightGrabPressed, ref _wasRightGrabbing, false);
+            var lookPoint = _targeter.Update(camera, cameraTransform, input.ReadMousePosition(), cursorLocked, Mathf.Max(_left.Depth, _right.Depth));
 
-            ApplyHand(game, leftInput, _left, _leftSelectedToggle, input.IsLeftFacePressed, input.IsLeftGrabPressed, input.IsTeleportPressed, lookPoint, input, cameraTransform, true);
-            ApplyHand(game, rightInput, _right, _rightSelectedToggle, input.IsRightFacePressed, input.IsRightGrabPressed, input.IsTeleportPressed, lookPoint, input, cameraTransform, false);
+            if (input.IsLeftGrabTogglePressed)
+            {
+                _leftGrabToggle = !_leftGrabToggle;
+            }
+
+            if (input.IsRightGrabTogglePressed)
+            {
+                _rightGrabToggle = !_rightGrabToggle;
+            }
+
+            var canTeleport = input.IsTeleportPressed && !input.HasMoveInput && !input.IsRunPressed;
+            ApplyHand(game, leftInput, _left, _leftSelectedToggle, input.IsLeftFacePressed, _bagAssistActive, _bagAssistPosition, _bagAssistRotation, _leftGrabToggle, canTeleport, lookPoint, input, cameraTransform, true);
+            ApplyHand(game, rightInput, _right, _rightSelectedToggle, input.IsRightFacePressed, false, Vector3.zero, Quaternion.identity, _rightGrabToggle, canTeleport, lookPoint, input, cameraTransform, false);
         }
 
-        private static void ApplyHand(GameReflection game, object playerInput, HandState state, bool selected, bool facePose, bool isGrabbing, bool isTeleporting, Vector3 lookPoint, DesktopInput input, Transform cameraTransform, bool isLeft)
+        private static void ApplyHand(GameReflection game, object playerInput, HandState state, bool selected, bool facePose, bool bagPose, Vector3 bagPosePosition, Quaternion bagPoseRotation, bool isGrabbing, bool isTeleporting, Vector3 lookPoint, DesktopInput input, Transform cameraTransform, bool isLeft)
         {
             if (playerInput == null)
             {
                 return;
             }
 
-            if (facePose || selected || !state.IsLocked)
+            if (bagPose)
+            {
+                state.Position = bagPosePosition;
+                state.Rotation = bagPoseRotation;
+            }
+            else if (facePose || selected || !state.IsLocked)
             {
                 var local = state.BaseOffset;
                 local.z = state.Depth;
@@ -280,75 +339,6 @@ namespace FlatscreenATTMod
                 game.SetButton(playerInput, raw, "MetaMenu", input.IsMetaMenuPressed);
                 game.SetButton(playerInput, raw, "ToggleMetaMenu", input.IsMetaMenuPressed);
             }
-        }
-
-        private static void HandleGrabInteraction(GameReflection game, object playerInput, ref object interactor, ref object heldInteractable, ref bool pickupClickMode, object pickup, object interactable, object menuTarget, bool isPressed, ref bool wasPressed, bool isLeft)
-        {
-            if (playerInput == null)
-            {
-                return;
-            }
-
-            if (interactor == null)
-            {
-                interactor = game.FindInteractorForInput(playerInput);
-            }
-
-            if (isPressed && !wasPressed)
-            {
-                if (pickup != null && game.TryTestGrab(pickup, isLeft))
-                {
-                    heldInteractable = pickup;
-                    pickupClickMode = true;
-                    wasPressed = isPressed;
-                    return;
-                }
-
-                if (pickup != null && game.TryPickupGrab(interactor, pickup))
-                {
-                    heldInteractable = pickup;
-                    pickupClickMode = true;
-                    wasPressed = isPressed;
-                    return;
-                }
-
-                if (interactable != null)
-                {
-                    heldInteractable = interactable;
-                    if (!game.TryStartInteract(interactor, interactable))
-                    {
-                        game.TryTestGrab(heldInteractable, isLeft);
-                    }
-                    wasPressed = isPressed;
-                    return;
-                }
-
-                if (interactable == null && menuTarget != null && game.TryAdjustMenuWheel(menuTarget, isLeft ? -1f : 1f))
-                {
-                    wasPressed = isPressed;
-                    return;
-                }
-
-                wasPressed = isPressed;
-            }
-            else if (!isPressed && wasPressed)
-            {
-                if (pickupClickMode)
-                {
-                    pickupClickMode = false;
-                    wasPressed = false;
-                    return;
-                }
-
-                if (!game.TryTestGrabEnd(heldInteractable, isLeft))
-                {
-                    game.TryStopInteract(interactor);
-                }
-
-                heldInteractable = null;
-            }
-
-            wasPressed = isPressed;
         }
 
         private sealed class HandState
