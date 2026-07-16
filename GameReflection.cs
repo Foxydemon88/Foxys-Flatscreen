@@ -55,6 +55,12 @@ namespace FlatscreenATTMod
 
 		private PlayerInputPair _looseInputPair = new PlayerInputPair();
 
+		private float _customizationScanTime = -10f;
+
+		private bool _customizationActive;
+
+		private static readonly string[] CustomizationHints = new string[8] { "Customization", "Customize", "Wardrobe", "Dressing", "CharacterEditor", "Appearance", "AvatarEditor", "Cosmetic" };
+
 		private MethodInfo _inputSourceEventMethod;
 
 		private MethodInfo _startInteractMethod;
@@ -199,6 +205,21 @@ namespace FlatscreenATTMod
 			return (playerTransform.root != null) ? playerTransform.root : playerTransform;
 		}
 
+		public Transform GetPlayerHeadTransform(object player)
+		{
+			Transform smoothLocomotionHead = GetSmoothLocomotionHead();
+			if (smoothLocomotionHead != null)
+			{
+				return smoothLocomotionHead;
+			}
+			Camera playerCamera = GetPlayerCamera(player);
+			if (playerCamera != null)
+			{
+				return playerCamera.transform;
+			}
+			return GetPlayerTransform(player);
+		}
+
 		public Camera GetPlayerCamera(object player)
 		{
 			if (player == null)
@@ -284,25 +305,29 @@ namespace FlatscreenATTMod
 
 		public PlayerInputPair FindLoosePlayerInputs()
 		{
-			Component component = _looseInputPair.Left as Component;
-			Component component2 = _looseInputPair.Right as Component;
-			if (component != null || component2 != null)
+			object left = IsUsablePlayerInput(_looseInputPair.Left) ? _looseInputPair.Left : null;
+			object right = IsUsablePlayerInput(_looseInputPair.Right) ? _looseInputPair.Right : null;
+			if (left != null && right != null)
 			{
 				return _looseInputPair;
 			}
-			_looseInputPair = new PlayerInputPair();
+			_looseInputPair = new PlayerInputPair
+			{
+				Left = left,
+				Right = right
+			};
 			MonoBehaviour[] array = UnityEngine.Object.FindObjectsOfType<MonoBehaviour>();
 			foreach (MonoBehaviour monoBehaviour in array)
 			{
-				if (!(monoBehaviour == null) && !(monoBehaviour.GetType().Name != "PlayerInput"))
+				if (!(monoBehaviour == null) && !(monoBehaviour.GetType().Name != "PlayerInput") && IsUsablePlayerInput(monoBehaviour))
 				{
 					object property = GetProperty<object>(monoBehaviour, "HandIndex");
 					string text = ((property == null) ? string.Empty : property.ToString().ToLowerInvariant());
-					if (text.Contains("left"))
+					if (text.Contains("left") && _looseInputPair.Left == null)
 					{
 						_looseInputPair.Left = monoBehaviour;
 					}
-					else if (text.Contains("right"))
+					else if (text.Contains("right") && _looseInputPair.Right == null)
 					{
 						_looseInputPair.Right = monoBehaviour;
 					}
@@ -384,6 +409,62 @@ namespace FlatscreenATTMod
 		public bool IsMovementBlocked(object player, object controller)
 		{
 			return HasBlockedState(player) || HasBlockedState(controller);
+		}
+
+		public bool IsCustomizationActive()
+		{
+			if (Time.unscaledTime < _customizationScanTime + 0.5f)
+			{
+				return _customizationActive;
+			}
+			_customizationScanTime = Time.unscaledTime;
+			_customizationActive = false;
+			MonoBehaviour[] array = UnityEngine.Object.FindObjectsOfType<MonoBehaviour>();
+			foreach (MonoBehaviour monoBehaviour in array)
+			{
+				if (monoBehaviour != null && monoBehaviour.gameObject.activeInHierarchy && (TextMatchesAny(monoBehaviour.GetType().Name, CustomizationHints) || TextMatchesAny(monoBehaviour.GetType().FullName, CustomizationHints) || TextMatchesAny(monoBehaviour.name, CustomizationHints)))
+				{
+					_customizationActive = true;
+					return true;
+				}
+			}
+			GameObject[] array2 = UnityEngine.Object.FindObjectsOfType<GameObject>();
+			foreach (GameObject gameObject in array2)
+			{
+				if (gameObject != null && gameObject.activeInHierarchy && TextMatchesAny(gameObject.name, CustomizationHints))
+				{
+					_customizationActive = true;
+					return true;
+				}
+			}
+			return false;
+		}
+
+		public bool IsCustomizationObject(object value)
+		{
+			Component component = value as Component;
+			if (component == null)
+			{
+				return value != null && (TextMatchesAny(value.GetType().Name, CustomizationHints) || TextMatchesAny(value.GetType().FullName, CustomizationHints));
+			}
+			if (TextMatchesAny(component.GetType().Name, CustomizationHints) || TextMatchesAny(component.GetType().FullName, CustomizationHints) || TextMatchesAny(component.name, CustomizationHints) || IsCustomizationTransform(component.transform))
+			{
+				return true;
+			}
+			return false;
+		}
+
+		public bool IsCustomizationTransform(Transform transform)
+		{
+			while (transform != null)
+			{
+				if (TextMatchesAny(transform.name, CustomizationHints))
+				{
+					return true;
+				}
+				transform = transform.parent;
+			}
+			return false;
 		}
 
 		public bool IsTargetHeldByOther(object target)
@@ -864,6 +945,29 @@ namespace FlatscreenATTMod
 			return false;
 		}
 
+		public bool TryEscapeCustomization()
+		{
+			string[] customizationMethods = new string[10] { "OnEndButtonPressed", "EndButtonPressed", "PressEndButton", "FinishCustomization", "CompleteCustomization", "ConfirmCustomization", "SaveAndExit", "ApplyAndExit", "Done", "Finish" };
+			MonoBehaviour[] array = UnityEngine.Object.FindObjectsOfType<MonoBehaviour>();
+			foreach (MonoBehaviour monoBehaviour in array)
+			{
+				if (monoBehaviour == null || !TypeMatchesAny(monoBehaviour.GetType(), new string[3] { "CosmeticCustomizationManager", "CustomizationRoom", "CustomizationManager" }))
+				{
+					continue;
+				}
+				if (TryRaiseEventField(monoBehaviour, "EndButtonPressed"))
+				{
+					return true;
+				}
+				if (TryInvokeFirstNoArgMethod(monoBehaviour, customizationMethods))
+				{
+					return true;
+				}
+			}
+			LastInteractResult = "customization escape failed: EndButtonPressed not found";
+			return false;
+		}
+
 		public bool TryToggleSceneBoolean(string[] typeNameHints, string[] memberNames)
 		{
 			MonoBehaviour[] array = UnityEngine.Object.FindObjectsOfType<MonoBehaviour>();
@@ -1297,6 +1401,10 @@ namespace FlatscreenATTMod
 			{
 				return false;
 			}
+			if (HasBlockedStateObject(target, 0))
+			{
+				return true;
+			}
 			string[] array = new string[13]
 			{
 				"IsDowned", "Downed", "IsDead", "Dead", "IsGrave", "InGrave", "IsGhost", "Ghost", "IsRespawning", "Respawning",
@@ -1365,6 +1473,65 @@ namespace FlatscreenATTMod
 				}
 			}
 			return false;
+		}
+
+		private static bool HasBlockedStateObject(object target, int depth)
+		{
+			if (target == null || depth > 2)
+			{
+				return false;
+			}
+			Type type = target.GetType();
+			if (IsBlockedPlayerStateType(type))
+			{
+				return true;
+			}
+			object obj = GetProperty<object>(target, "State") ?? GetProperty<object>(target, "Status");
+			if (IsBlockedPlayerStateObject(obj) || HasBlockedStateObject(obj, depth + 1))
+			{
+				return true;
+			}
+			string[] array = new string[9] { "CurrentState", "ActiveState", "PlayerState", "BaseState", "StateHandler", "PlayerStateHandler", "StateMachine", "StateManager", "CurrentPlayerState" };
+			foreach (string name in array)
+			{
+				object property = GetProperty<object>(target, name);
+				if (IsBlockedPlayerStateObject(property) || HasBlockedStateObject(property, depth + 1))
+				{
+					return true;
+				}
+				FieldInfo field = type.GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+				if (field == null)
+				{
+					continue;
+				}
+				try
+				{
+					object value = field.GetValue(target);
+					if (IsBlockedPlayerStateObject(value) || HasBlockedStateObject(value, depth + 1))
+					{
+						return true;
+					}
+				}
+				catch
+				{
+				}
+			}
+			return false;
+		}
+
+		private static bool IsBlockedPlayerStateObject(object value)
+		{
+			return value != null && IsBlockedPlayerStateType(value.GetType());
+		}
+
+		private static bool IsBlockedPlayerStateType(Type type)
+		{
+			if (type == null)
+			{
+				return false;
+			}
+			string fullName = type.FullName ?? type.Name;
+			return fullName == "Alta.PlayerStates.DeadState" || fullName == "Alta.PlayerStates.DownedState" || fullName == "Alta.PlayerStates.SpiritState";
 		}
 
 		private bool IsLocalLike(object owner)
@@ -1523,10 +1690,12 @@ namespace FlatscreenATTMod
 		private object FindLocomotionController(object player)
 		{
 			Component component = _locomotionController as Component;
-			if (component != null)
+			if (IsUsableLocomotionController(component, player))
 			{
 				return _locomotionController;
 			}
+			_locomotionController = null;
+			_locomotionTranslateMethod = null;
 			Transform playerTransform = GetPlayerTransform(player);
 			if (playerTransform == null)
 			{
@@ -1544,13 +1713,158 @@ namespace FlatscreenATTMod
 			componentsInChildren = UnityEngine.Object.FindObjectsOfType<MonoBehaviour>();
 			foreach (MonoBehaviour monoBehaviour in componentsInChildren)
 			{
-				if (monoBehaviour != null && monoBehaviour.GetType().Name == "PlayerLocomotionController")
+				if (monoBehaviour != null && (monoBehaviour.GetType().Name == "PlayerLocomotionController" || monoBehaviour.GetType().Name == "SmoothLocomotion") && IsLikelyActiveLocomotion(monoBehaviour))
 				{
 					_locomotionController = monoBehaviour;
 					return monoBehaviour;
 				}
 			}
 			return null;
+		}
+
+		private Transform GetSmoothLocomotionHead()
+		{
+			MonoBehaviour[] array = UnityEngine.Object.FindObjectsOfType<MonoBehaviour>();
+			foreach (MonoBehaviour monoBehaviour in array)
+			{
+				if (monoBehaviour == null || monoBehaviour.GetType().Name != "SmoothLocomotion" || !IsLikelyActiveLocomotion(monoBehaviour))
+				{
+					continue;
+				}
+				object property = GetProperty<object>(monoBehaviour, "Character") ?? GetField<object>(monoBehaviour, "Character");
+				Component component = property as Component;
+				if (component == null)
+				{
+					continue;
+				}
+				Transform transform = component.transform.Find("Relative Controllers");
+				if (transform != null && transform.childCount > 2)
+				{
+					return transform.GetChild(2);
+				}
+				Camera camera = component.GetComponentInChildren<Camera>(true);
+				if (camera != null)
+				{
+					return camera.transform;
+				}
+			}
+			return null;
+		}
+
+		private bool IsLikelyActiveLocomotion(object locomotion)
+		{
+			Component component = locomotion as Component;
+			if (!IsUsableComponent(component))
+			{
+				return false;
+			}
+			object property = GetProperty<object>(locomotion, "IsEnabled") ?? GetField<object>(locomotion, "IsEnabled");
+			if (property is bool)
+			{
+				return (bool)property;
+			}
+			Behaviour behaviour = component as Behaviour;
+			return behaviour == null || behaviour.enabled;
+		}
+
+		private bool IsUsablePlayerInput(object input)
+		{
+			Component component = input as Component;
+			return IsUsableComponent(component) && GetInputTargetTransform(input) != null;
+		}
+
+		private bool IsUsableLocomotionController(Component component, object player)
+		{
+			if (!IsUsableComponent(component))
+			{
+				return false;
+			}
+			Transform playerTransform = GetPlayerTransform(player);
+			if (playerTransform == null)
+			{
+				return true;
+			}
+			Transform root = (playerTransform.root != null) ? playerTransform.root : playerTransform;
+			return component.transform == playerTransform || component.transform.IsChildOf(playerTransform) || component.transform == root || component.transform.IsChildOf(root);
+		}
+
+		private static bool IsUsableComponent(Component component)
+		{
+			return component != null && component.gameObject != null && component.gameObject.activeInHierarchy;
+		}
+
+		private static bool TextMatchesAny(string value, string[] hints)
+		{
+			if (string.IsNullOrEmpty(value) || hints == null)
+			{
+				return false;
+			}
+			foreach (string text in hints)
+			{
+				if (!string.IsNullOrEmpty(text) && value.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0)
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private bool TryInvokeFirstNoArgMethod(object target, string[] methodNames)
+		{
+			if (target == null || methodNames == null)
+			{
+				return false;
+			}
+			Type type = target.GetType();
+			foreach (string text in methodNames)
+			{
+				MethodInfo method = type.GetMethod(text, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+				if (method == null || method.GetParameters().Length != 0)
+				{
+					continue;
+				}
+				try
+				{
+					method.Invoke(target, null);
+					LastInteractResult = type.Name + "." + text + " called";
+					return true;
+				}
+				catch
+				{
+				}
+			}
+			return false;
+		}
+
+		private bool TryRaiseEventField(object target, string eventName)
+		{
+			if (target == null || string.IsNullOrEmpty(eventName))
+			{
+				return false;
+			}
+			Type type = target.GetType();
+			while (type != null)
+			{
+				FieldInfo field = type.GetField(eventName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+				if (field != null)
+				{
+					try
+					{
+						Delegate @delegate = field.GetValue(target) as Delegate;
+						if (@delegate != null)
+						{
+							@delegate.DynamicInvoke(null);
+							LastInteractResult = target.GetType().Name + "." + eventName + " raised";
+							return true;
+						}
+					}
+					catch
+					{
+					}
+				}
+				type = type.BaseType;
+			}
+			return false;
 		}
 
 		private bool TryTranslateWithCharacterController(object player, Vector3 translation)
