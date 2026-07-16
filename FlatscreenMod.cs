@@ -30,6 +30,10 @@ namespace FlatscreenATTMod
 
 		private bool _menuCameraInitialized;
 
+		private bool _customizationCameraInitialized;
+
+		private bool _wasCustomizationMode;
+
 		private bool _loggedMissingInput;
 
 		private bool _pendingReturnToMenu;
@@ -48,9 +52,15 @@ namespace FlatscreenATTMod
 
 		private bool _wasMovementBlocked;
 
+		private bool _serverSessionActive;
+
 		private Vector3 _menuCameraPosition;
 
 		private float _heightOffset = 1.45f;
+
+		private float _targetFieldOfView = 90f;
+
+		private bool _fieldOfViewInitialized;
 
 		private bool _thirdPersonEnabled;
 
@@ -79,7 +89,15 @@ namespace FlatscreenATTMod
 			get
 			{
 				Camera camera = ((_camera != null) ? _camera : Camera.main);
-				return (camera != null) ? camera.fieldOfView : 75f;
+				return (camera != null) ? camera.fieldOfView : _targetFieldOfView;
+			}
+		}
+
+		internal float LookSensitivity
+		{
+			get
+			{
+				return _input.LookSensitivityMultiplier;
 			}
 		}
 
@@ -163,14 +181,21 @@ namespace FlatscreenATTMod
 				if (obj == null)
 				{
 					_pendingReturnToMenu = false;
+					_serverSessionActive = false;
+					_lastPlayerTransform = null;
 				}
 			}
 			else
 			{
-				object obj2 = (_lastPlayer = _game.FindLocalPlayer());
+				object obj2 = _game.FindLocalPlayer();
 				if (obj2 != null)
 				{
+					_lastPlayer = obj2;
+					_serverSessionActive = true;
 					UpdateServerPlayer(obj2);
+				}
+				else if (HoldMissingServerPlayerCamera())
+				{
 				}
 				else
 				{
@@ -239,6 +264,7 @@ namespace FlatscreenATTMod
 				_camera = camera;
 				_camera.enabled = true;
 				_camera.tag = "MainCamera";
+				ApplyDefaultFieldOfView(_camera);
 				UpdateServerCamera(transform, _camera.transform);
 			}
 			else
@@ -263,6 +289,20 @@ namespace FlatscreenATTMod
 			AdjustHeight();
 			_input.UpdateLook(_cursorLocked);
 			bool flag = _game.IsMovementBlocked(player, controller);
+			bool flag2 = _game.IsCustomizationObject(player) || _game.IsCustomizationObject(controller) || _game.IsCustomizationTransform(transform) || (flag && _game.IsCustomizationActive());
+			if (flag2)
+			{
+				_wasCustomizationMode = true;
+				UpdateCustomizationArea(player, transform, camera);
+				return;
+			}
+			if (_wasCustomizationMode)
+			{
+				RestorePlayerCameraAfterCustomization(camera);
+			}
+			bool flag3 = !flag || flag2;
+			_customizationCameraInitialized = false;
+			_wasCustomizationMode = false;
 			if (flag)
 			{
 				if (!ShouldPreserveBlockedHandInteraction())
@@ -279,7 +319,7 @@ namespace FlatscreenATTMod
 				_game.TryReleaseHeldHands(player);
 			}
 			_wasMovementBlocked = flag;
-			if (_cursorLocked && !flag && !_hands.IsClimbingGrabActive)
+			if (_cursorLocked && flag3)
 			{
 				MovePlayer(player, controller, transform);
 			}
@@ -303,12 +343,116 @@ namespace FlatscreenATTMod
 			{
 				_hands.UpdateInputs(_lastLeftInput, _lastRightInput, _game, _input, camera2, transform2, _cursorLocked);
 			}
-			if (_cursorLocked && !flag)
+			if (_cursorLocked && flag3)
 			{
 				ApplyClimbTranslation(player, controller, transform);
 			}
-			_lastStatus = (flag ? "server movement blocked" : (_hands.IsClimbingGrabActive ? "climbing server player" : (_cursorLocked ? "controlling server player" : "server controls unlocked")));
+			_lastStatus = (flag2 ? "controlling customization area" : (flag ? "server movement blocked" : (_hands.IsClimbingGrabActive ? "climbing server player" : (_cursorLocked ? "controlling server player" : "server controls unlocked"))));
+			_lastMode = flag2 ? "customization" : "server";
+		}
+
+		private bool HoldMissingServerPlayerCamera()
+		{
+			if (!_serverSessionActive)
+			{
+				return false;
+			}
+			if (_lastPlayerTransform != null)
+			{
+				AdjustHeight();
+				_input.UpdateLook(_cursorLocked);
+				EnsureCamera();
+				if (_camera != null)
+				{
+					UpdateServerCamera(_lastPlayerTransform, _camera.transform);
+				}
+			}
+			_hands.ReleaseAllGrabs();
+			_wasMovementBlocked = true;
+			_lastStatus = "server player unavailable, movement blocked";
 			_lastMode = "server";
+			return true;
+		}
+
+		private void RestorePlayerCameraAfterCustomization(Camera playerCamera)
+		{
+			DisableThirdPersonCamera();
+			if (_camera != null && _camera.name == "Flatscreen Desktop Camera")
+			{
+				_camera.enabled = false;
+				_camera.tag = "Untagged";
+				_camera = null;
+			}
+			if (playerCamera != null)
+			{
+				playerCamera.enabled = true;
+				playerCamera.tag = "MainCamera";
+				_camera = playerCamera;
+				ApplyDefaultFieldOfView(_camera);
+				_input.SetInitialRotation(_camera.transform.rotation);
+			}
+			_customizationCameraInitialized = false;
+			_menuCameraInitialized = false;
+		}
+
+		private void UpdateCustomizationArea(object player, Transform playerRoot, Camera sourceCamera)
+		{
+			_wasMovementBlocked = false;
+			DisableThirdPersonCamera();
+			_lastLeftInput = _game.GetLeftInput(player);
+			_lastRightInput = _game.GetRightInput(player);
+			if (_lastLeftInput == null || _lastRightInput == null)
+			{
+				GameReflection.PlayerInputPair playerInputPair = _game.FindLoosePlayerInputs();
+				if (_lastLeftInput == null)
+				{
+					_lastLeftInput = playerInputPair.Left;
+				}
+				if (_lastRightInput == null)
+				{
+					_lastRightInput = playerInputPair.Right;
+				}
+			}
+			EnsureCamera(true);
+			if (_camera == null)
+			{
+				_lastStatus = "customization: waiting for camera";
+				_lastMode = "customization";
+				return;
+			}
+			if (!_customizationCameraInitialized)
+			{
+				Transform playerHeadTransform = _game.GetPlayerHeadTransform(player);
+				if (playerHeadTransform != null)
+				{
+					_menuCameraPosition = playerHeadTransform.position;
+					_input.SetInitialRotation(playerHeadTransform.rotation);
+				}
+				else if (playerRoot != null)
+				{
+					_menuCameraPosition = playerRoot.position + Vector3.up * _heightOffset;
+					_input.SetInitialRotation(Quaternion.Euler(0f, playerRoot.rotation.eulerAngles.y, 0f));
+				}
+				else if (sourceCamera != null)
+				{
+					_menuCameraPosition = sourceCamera.transform.position;
+					_input.SetInitialRotation(sourceCamera.transform.rotation);
+				}
+				else
+				{
+					_menuCameraPosition = _camera.transform.position;
+				}
+				_customizationCameraInitialized = true;
+			}
+			if (_cursorLocked)
+			{
+				MoveMenuCamera();
+			}
+			_camera.transform.position = _menuCameraPosition;
+			_camera.transform.rotation = _input.CameraRotation;
+			_hands.UpdateInputs(_lastLeftInput, _lastRightInput, _game, _input, _camera, _camera.transform, _cursorLocked);
+			_lastStatus = (_cursorLocked ? "controlling customization camera" : "customization controls unlocked");
+			_lastMode = "customization";
 		}
 
 		private void UpdateMainMenu()
@@ -353,6 +497,7 @@ namespace FlatscreenATTMod
 					_camera = camera;
 					_camera.enabled = true;
 					_camera.tag = "MainCamera";
+					ApplyDefaultFieldOfView(_camera);
 					return;
 				}
 			}
@@ -373,7 +518,7 @@ namespace FlatscreenATTMod
 				_camera = gameObject.AddComponent<Camera>();
 				_camera.nearClipPlane = 0.03f;
 				_camera.farClipPlane = 2000f;
-				_camera.fieldOfView = 75f;
+				_camera.fieldOfView = _targetFieldOfView;
 				if (camera != null)
 				{
 					_camera.clearFlags = camera.clearFlags;
@@ -395,6 +540,7 @@ namespace FlatscreenATTMod
 			}
 			_camera.enabled = true;
 			_camera.tag = "MainCamera";
+			ApplyDefaultFieldOfView(_camera);
 		}
 
 		private void EnsureMenuCamera()
@@ -637,6 +783,8 @@ namespace FlatscreenATTMod
 		internal void SetCameraFieldOfView(float value)
 		{
 			float fieldOfView = Mathf.Clamp(value, 45f, 110f);
+			_targetFieldOfView = fieldOfView;
+			_fieldOfViewInitialized = true;
 			if (_camera != null)
 			{
 				_camera.fieldOfView = fieldOfView;
@@ -645,6 +793,25 @@ namespace FlatscreenATTMod
 			{
 				Camera.main.fieldOfView = fieldOfView;
 			}
+		}
+
+		private void ApplyDefaultFieldOfView(Camera camera)
+		{
+			if (_fieldOfViewInitialized || camera == null)
+			{
+				return;
+			}
+			camera.fieldOfView = _targetFieldOfView;
+			if (Camera.main != null && Camera.main != camera)
+			{
+				Camera.main.fieldOfView = _targetFieldOfView;
+			}
+			_fieldOfViewInitialized = true;
+		}
+
+		internal void SetLookSensitivity(float value)
+		{
+			_input.LookSensitivityMultiplier = value;
 		}
 
 		internal void SetThirdPersonEnabled(bool value)
