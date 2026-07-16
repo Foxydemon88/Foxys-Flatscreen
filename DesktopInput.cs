@@ -155,6 +155,8 @@ namespace FlatscreenATTMod
 
 		private float _pitch;
 
+		private float _lookSensitivity = 1f;
+
 		public bool IsAvailable
 		{
 			get
@@ -427,6 +429,18 @@ namespace FlatscreenATTMod
 			}
 		}
 
+		public float LookSensitivityMultiplier
+		{
+			get
+			{
+				return _lookSensitivity;
+			}
+			set
+			{
+				_lookSensitivity = Mathf.Clamp(value, 0.25f, 3f);
+			}
+		}
+
 		public void SetInitialRotation(Quaternion rotation)
 		{
 			Vector3 eulerAngles = rotation.eulerAngles;
@@ -439,8 +453,9 @@ namespace FlatscreenATTMod
 			if (IsAvailable && cursorLocked)
 			{
 				Vector2 vector = _inputSystem.ReadMouseVector2("delta");
-				_yaw += vector.x * 0.12f;
-				_pitch = Mathf.Clamp(_pitch - vector.y * 0.12f, -85f, 85f);
+				float sensitivity = LookSensitivity * _lookSensitivity;
+				_yaw += vector.x * sensitivity;
+				_pitch = Mathf.Clamp(_pitch - vector.y * sensitivity, -85f, 85f);
 			}
 		}
 
@@ -470,14 +485,6 @@ namespace FlatscreenATTMod
 		public Vector3 ReadClimbHandVector()
 		{
 			Vector3 zero = Vector3.zero;
-			if (_inputSystem.IsPressed("wKey"))
-			{
-				zero += Vector3.up;
-			}
-			if (_inputSystem.IsPressed("sKey"))
-			{
-				zero -= Vector3.up;
-			}
 			if (_inputSystem.IsPressed("dKey"))
 			{
 				zero += Vector3.right;
