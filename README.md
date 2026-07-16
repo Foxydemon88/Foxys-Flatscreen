@@ -2,8 +2,6 @@
 
 Open-source MelonLoader/TavernLib flatscreen mod for A Township Tale.
 
-It adds desktop camera, keyboard movement, mouse look, hand emulation, menu interaction, quick server joining, and hand pose controls for self-hosted/TavernLib-based play.
-
 ## Controls
 
 - `Caps Lock`: toggle control lock on/off
