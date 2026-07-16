@@ -28,6 +28,8 @@ namespace FlatscreenATTMod
 
 			public float VerticalAngle;
 
+			public float RollAngle;
+
 			public Vector3 ClimbPoseOffset;
 
 			public bool IsClimbingGrabActive;
@@ -51,6 +53,7 @@ namespace FlatscreenATTMod
 			{
 				HorizontalAngle = DefaultHorizontalAngle;
 				VerticalAngle = DefaultVerticalAngle;
+				RollAngle = 0f;
 				OffsetX = 0f;
 				OffsetY = 0f;
 			}
@@ -61,11 +64,22 @@ namespace FlatscreenATTMod
 				ResetPose();
 			}
 
+			public void ResetPositionOnly()
+			{
+				Depth = BaseOffset.z;
+				OffsetX = 0f;
+				OffsetY = 0f;
+				ResetClimb();
+			}
+
 			public void Clamp()
 			{
 				Depth = Mathf.Clamp(Depth, -0.15f, 1.6f);
 				OffsetX = Mathf.Clamp(OffsetX, -0.45f, 0.45f);
 				OffsetY = Mathf.Clamp(OffsetY, -0.35f, 0.55f);
+				HorizontalAngle = Mathf.Clamp(HorizontalAngle, -180f, 180f);
+				VerticalAngle = Mathf.Clamp(VerticalAngle, -180f, 180f);
+				RollAngle = Mathf.Clamp(RollAngle, -180f, 180f);
 			}
 
 			public void ResetClimb()
@@ -132,6 +146,8 @@ namespace FlatscreenATTMod
 
 		private Vector3 _climbBodyTranslation;
 
+		private float _climbSensitivity = 1f;
+
 		public string TargetColliderName
 		{
 			get
@@ -196,6 +212,14 @@ namespace FlatscreenATTMod
 			}
 		}
 
+		public float LeftRollAngle
+		{
+			get
+			{
+				return _left.RollAngle;
+			}
+		}
+
 		public float RightHorizontalAngle
 		{
 			get
@@ -209,6 +233,14 @@ namespace FlatscreenATTMod
 			get
 			{
 				return _right.VerticalAngle;
+			}
+		}
+
+		public float RightRollAngle
+		{
+			get
+			{
+				return _right.RollAngle;
 			}
 		}
 
@@ -251,6 +283,18 @@ namespace FlatscreenATTMod
 			get
 			{
 				return _right.IsClimbingGrabActive;
+			}
+		}
+
+		public float ClimbSensitivity
+		{
+			get
+			{
+				return _climbSensitivity;
+			}
+			set
+			{
+				_climbSensitivity = Mathf.Clamp(value, 0.25f, 3f);
 			}
 		}
 
@@ -317,22 +361,32 @@ namespace FlatscreenATTMod
 
 		public void SetLeftHorizontalAngle(float value)
 		{
-			_left.HorizontalAngle = value;
+			_left.HorizontalAngle = Mathf.Clamp(value, -180f, 180f);
 		}
 
 		public void SetLeftVerticalAngle(float value)
 		{
-			_left.VerticalAngle = value;
+			_left.VerticalAngle = Mathf.Clamp(value, -180f, 180f);
+		}
+
+		public void SetLeftRollAngle(float value)
+		{
+			_left.RollAngle = Mathf.Clamp(value, -180f, 180f);
 		}
 
 		public void SetRightHorizontalAngle(float value)
 		{
-			_right.HorizontalAngle = value;
+			_right.HorizontalAngle = Mathf.Clamp(value, -180f, 180f);
 		}
 
 		public void SetRightVerticalAngle(float value)
 		{
-			_right.VerticalAngle = value;
+			_right.VerticalAngle = Mathf.Clamp(value, -180f, 180f);
+		}
+
+		public void SetRightRollAngle(float value)
+		{
+			_right.RollAngle = Mathf.Clamp(value, -180f, 180f);
 		}
 
 		public void SetLeftDepth(float value)
@@ -343,6 +397,60 @@ namespace FlatscreenATTMod
 		public void SetRightDepth(float value)
 		{
 			_right.Depth = Mathf.Clamp(value, -0.15f, 1.6f);
+		}
+
+		public void SetLeftPalmDownPose()
+		{
+			SetPalmDownPose(_left, true);
+		}
+
+		public void SetRightPalmDownPose()
+		{
+			SetPalmDownPose(_right, false);
+		}
+
+		public void SetBothPalmDownPose()
+		{
+			SetPalmDownPose(_left, true);
+			SetPalmDownPose(_right, false);
+		}
+
+		public void SetBothHandshakePose()
+		{
+			SetHandshakePose(_left, true);
+			SetHandshakePose(_right, false);
+		}
+
+		public void SetBothFingertipsDownInPose()
+		{
+			SetFingertipsDownInPose(_left, true);
+			SetFingertipsDownInPose(_right, false);
+		}
+
+		private static void SetPalmDownPose(HandState state, bool isLeft)
+		{
+			state.HorizontalAngle = isLeft ? -105f : 105f;
+			state.VerticalAngle = -110f;
+			state.RollAngle = isLeft ? 122f : -122f;
+			state.Clamp();
+		}
+
+		private static void SetHandshakePose(HandState state, bool isLeft)
+		{
+			state.HorizontalAngle = isLeft ? -14f : 14f;
+			state.VerticalAngle = -44f;
+			state.RollAngle = 0f;
+			state.Depth = 0.26f;
+			state.Clamp();
+		}
+
+		private static void SetFingertipsDownInPose(HandState state, bool isLeft)
+		{
+			state.HorizontalAngle = isLeft ? -16f : 16f;
+			state.VerticalAngle = 57f;
+			state.RollAngle = isLeft ? -5f : 5f;
+			state.Depth = 0.26f;
+			state.Clamp();
 		}
 
 		public void Update(object player, GameReflection game, DesktopInput input, Camera camera, Transform cameraTransform, bool cursorLocked)
@@ -399,7 +507,7 @@ namespace FlatscreenATTMod
 				}
 				else
 				{
-					_left.ResetRestPose();
+					_left.ResetPositionOnly();
 				}
 			}
 			if (input.IsRightSelectTogglePressed)
@@ -411,7 +519,7 @@ namespace FlatscreenATTMod
 				}
 				else
 				{
-					_right.ResetRestPose();
+					_right.ResetPositionOnly();
 				}
 			}
 			float num = input.ReadScroll() * 0.0012f;
@@ -495,6 +603,7 @@ namespace FlatscreenATTMod
 				baseOffset.z = state.Depth;
 				baseOffset += state.ClimbPoseOffset;
 				Quaternion quaternion = Quaternion.Euler(0f, cameraTransform.eulerAngles.y, 0f);
+				float pitchOffset = state.VerticalAngle - state.DefaultVerticalAngle;
 				if (facePose)
 				{
 					baseOffset.y += 0.58f;
@@ -503,7 +612,7 @@ namespace FlatscreenATTMod
 					baseOffset.x += state.OffsetX;
 					baseOffset.y += state.OffsetY;
 					state.Position = cameraTransform.TransformPoint(baseOffset);
-					state.Rotation = cameraTransform.rotation * Quaternion.Euler(-8f, state.HorizontalAngle, 0f);
+					state.Rotation = cameraTransform.rotation * Quaternion.Euler(-8f + pitchOffset, state.HorizontalAngle, state.RollAngle);
 				}
 				else if (selected)
 				{
@@ -512,12 +621,12 @@ namespace FlatscreenATTMod
 					baseOffset.x += state.OffsetX;
 					baseOffset.y += state.OffsetY;
 					state.Position = cameraTransform.TransformPoint(baseOffset);
-					state.Rotation = cameraTransform.rotation * Quaternion.Euler(-30f, state.HorizontalAngle, 0f);
+					state.Rotation = cameraTransform.rotation * Quaternion.Euler(-30f + pitchOffset, state.HorizontalAngle, state.RollAngle);
 				}
 				else
 				{
 					state.Position = cameraTransform.position + quaternion * baseOffset;
-					state.Rotation = quaternion * Quaternion.Euler(state.VerticalAngle, state.HorizontalAngle, 0f);
+					state.Rotation = quaternion * Quaternion.Euler(state.VerticalAngle, state.HorizontalAngle, state.RollAngle);
 				}
 			}
 			Transform inputTargetTransform = game.GetInputTargetTransform(playerInput);
@@ -556,7 +665,7 @@ namespace FlatscreenATTMod
 				return;
 			}
 			Vector3 vector = input.ReadClimbHandVector();
-			Vector3 handDelta = vector * ClimbHandSpeed * Time.deltaTime;
+			Vector3 handDelta = vector * ClimbHandSpeed * _climbSensitivity * Time.deltaTime;
 			int activeCount = 0;
 			Vector3 mirroredBodyDelta = Vector3.zero;
 			if (input.IsLeftGrabPressed)
