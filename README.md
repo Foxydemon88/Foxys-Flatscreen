@@ -28,8 +28,9 @@ It adds desktop camera, keyboard movement, mouse look, hand emulation, menu inte
 - `2`: lock/unlock right hand in place
 - `3`: lock/unlock both hands
 - `4`: unlock both hands
-- `V`: Third-Person
-- `I`: Bag Open Pose
+- `Home`: reset hands
+- `V`: Third Person
+- `I` Open bag Pose
 
 ## Build
 
@@ -44,9 +45,5 @@ The built mod is:
 ```text
 FlatscreenATTMod\bin\Release\FlatscreenATTMod.dll
 ```
-
-Download FlatscreenATTMod.dll from the latest GitHub Release.
-Put it in the game Mods folder.
-Launch the game with MelonLoader/TavernLib installed.
 
 Place that DLL into the game's `Mods` folder.
